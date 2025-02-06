@@ -1,0 +1,60 @@
+---
+- name: Install required tools and configure K3S on remote host
+  hosts: remote
+  become: yes
+  tasks:
+
+    # Aktualizacja cache pakietów oraz instalacja niezbędnych narzędzi
+    - name: Update apt cache (Debian/Ubuntu)
+      apt:
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Install required packages on Debian/Ubuntu
+      apt:
+        name:
+          - curl
+          - wget
+          - tar
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install required packages on RedHat/CentOS
+      yum:
+        name:
+          - curl
+          - wget
+          - tar
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    # Instalacja K3S – uruchamia skrypt instalacyjny K3S tylko, gdy plik konfiguracyjny nie istnieje
+    - name: Install K3S (if not already installed)
+      shell: |
+        curl -sfL https://get.k3s.io | sh -
+      args:
+        creates: /etc/rancher/k3s/k3s.yaml
+      register: k3s_install
+      changed_when: k3s_install.stdout != ""
+
+    - name: Ensure K3S is running
+      service:
+        name: k3s
+        state: started
+        enabled: yes
+
+    # Tworzenie katalogu na manifesty Kubernetes
+    - name: Create directory for Kubernetes manifests
+      file:
+        path: /home/{{ ansible_user }}/k8s-manifests
+        state: directory
+        mode: '0755'
+
+    # Kopiowanie manifestów (cały folder manifests) z lokalnego projektu na serwer
+    - name: Copy Kubernetes manifests to remote host
+      copy:
+        src: ../manifests/
+        dest: /home/{{ ansible_user }}/k8s-manifests/
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
